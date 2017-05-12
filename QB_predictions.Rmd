@@ -1,0 +1,213 @@
+---
+title: "Predicting QB PER"
+author: "william clarke"
+date: "August 17, 2015"
+output: pdf_document
+---
+ 
+ 
+##Introduction
+
+How do we predict QB Performance rating (PER) given a data set of positional performance from 2010 to 2014?  
+What are the positions that affect QB performance?  
+How can we include player acquisitions, trades and injuries into our QB predictions?  
+
+In order to accurately assess a team's performance, one must focus on the QB position. The QB is by far the most impactful player. Each year, there is a new influx of players on the offense that may impact his performance. In addition, the QB's own personal variation in performance should needs to be considered. How might we predict how well a QB will do in the next season? This is the goal of this document. 
+
+##Data
+
+The initial data set provided by Tampa Bay Buccaneers included their proprietary system (PER) for rating player performance. It uses a wide variety of metrics to generate a single value for each player. PER is a value between 0 and 3.0 given to each player in the league based on their season's performance. 1.0 is considered an average performance at that position.
+
+First, I transformed this data set by merging it with pro-football-reference.com player data and then turned the data set into a flat file for processing. I created positional variables such as QB, WR, TE, OL and RB that were averages of key role players at those positions. Key role players were identified using pivot tables with filtering on games played (greater than 10), games started (greater than 5) and PER (greater than .5). This assured me that only key contributors would be in the data set.
+
+##EDA
+
+My first step was to limit the variables to only offensive positions with the assumption that QB play is mostly affected by offensive positions. This meant I included the variables QB, WR, TE, RB and OL. 
+
+```{r ,echo=FALSE, results = "hide"}
+setwd("~/Desktop/R/TB/data files")
+dat<-read.csv("hybrid_Master PER File.csv")
+head(dat)
+attach(dat)
+dat1<-subset(dat, select=c(Year, team, QB, OL, RB, TE, WR, off))
+head(dat1, n=3)
+dat2<-dat1[,3:8]
+head(dat2)
+setwd("~/Desktop/R/TB/QB predictions")
+```
+Here is an example of what the data set looked like.
+```{r, echo=FALSE}
+head(dat1, n=3)
+```
+My first step in the EDA process was to look at the correlations between these variables.
+```{r correlation plot,fig.height = 4,echo=FALSE}
+pairs(dat2)
+```
+
+After looking at the correlations it was clear that it was necessary to include all the variables. The weakest correlation was between RB and QB. After reviewing my first regression model, I determined that I needed to remove the off variable as it resulted in rank regression issues. This was due to the fact that off, is the sum of all the other offensive variables in the model and hence a redundancy.
+
+##Process
+Since my goal is to predict QB performance, I developed a set process:  
+
+* perform linear regression of all variables to identify significant variables that relate to QB performance.  
+
+* cluster the data set using only significant variables.  
+
+* do linear regression on each cluster to create a model for that cluster of teams. 
+  
+##Modeling  
+###linear regression
+
+```{r, echo=FALSE}
+fit.lm<-lm(QB~WR+TE+OL+RB-1, data=dat1)
+```
+
+Here are the results of my regression model.
+```{r,echo=FALSE,results=TRUE, fig.height=4}
+summary(fit.lm)
+```
+After inspecting the results of the linear regression, I removed RB before using clustering since it was insignificant in the model.
+
+###clustering the league  
+
+The first step in exploring clusters is to identify how many clusters are best. I decided too many clusters would make things too complicated and would decrease the number of observations in each cluster. It was also important to consider how many clusters seems to decribe the data accurately. 
+
+```{r, echo=FALSE, include=FALSE}
+library(cluster)
+library(useful)
+library(fpc)
+```
+ 
+```{r, echo=FALSE, results ="hide"}
+dat3<-subset(dat, select=c(QB, OL, TE, WR))
+head(dat3, n=3)
+FitKMeans(dat3, max.clusters=7, nstart = 2, seed=1234)
+set.seed(111)
+cl1<- kmeans(dat3,5)
+cl1
+```
+Below is the cluster plot. The clusters are fairly separate and well-defined. Five clusters seems to reasonably describe the various aspects of the groups. 
+```{r clusterplot, echo=FALSE, fig.heigth = 4 }
+plotcluster(dat3, cl1$cluster)
+```
+
+Here is some of the output associated with the clustering. There are five clusters and the average PER for each position is given within the clustering. 
+```{r , echo =FALSE}
+cl1$center
+
+```
+Key points:  
+
+* cluster 1: best QB, best TE, best OL, 2nd best WR  
+
+* cluster 2: 2nd best QB, 2nd best OL, 3rd best TE, best WR    
+
+* cluster 3: 3rd best QB, 4th best OL, below average TE, slightly above average WR  
+
+* cluster 4: 4th best QB, 3rd best OL, average TE and WR    
+
+* cluster 5: slightly above average QB and OL, below average TE, average WR    
+
+###Regression Modeling  
+
+The next step was to perform linear regression on each cluster to obtain a model that would predict QB PER for any team in that cluster.  
+
+####cluster 1 model:  
+
+The cluster models were created using positional PER averages for OL, TE, WR, and QB. In addition, interaction terms were looked at. Only the TE*WR interaction led to a significant model.  
+```{r, echo=FALSE, results = "hide"}
+c1_df <- dat3[which(cl1$cluster == 1),]
+c1_df$TE_WR<-c1_df$TE*c1_df$WR
+cl1_lm<-lm(QB~OL+TE+WR+TE_WR-1, data=c1_df)
+```
+The results below lead to the cluster models.
+
+```{r echo=FALSE, fig.height=4}
+summary(cl1_lm)
+```
+```{r, echo=FALSE, results = "hide"}
+c2_df <- dat3[which(cl1$cluster == 2),]
+c2_df$TE_WR<-c2_df$TE*c2_df$WR
+cl2_lm<-lm(QB~OL+TE+WR+TE_WR-1, data=c2_df)
+summary(cl2_lm)
+c3_df <- dat3[which(cl1$cluster == 3),]
+c3_df$TE_WR<-c3_df$TE*c3_df$WR
+cl3_lm<-lm(QB~OL+TE+WR+TE_WR-1, data=c3_df)
+summary(cl3_lm)
+c4_df <- dat3[which(cl1$cluster == 4),]
+c4_df$TE_WR<-c4_df$TE*c4_df$WR
+cl4_lm<-lm(QB~OL+TE+WR+TE_WR-1, data=c4_df)
+summary(cl4_lm)
+c5_df <- dat3[which(cl1$cluster == 5),]
+c5_df$TE_WR<-c5_df$TE*c5_df$WR
+cl5_lm<-lm(QB~OL+TE+WR+TE_WR-1, data=c5_df)
+summary(cl5_lm)
+```
+Here are the five models generated: 
+
+QB_cl1 = .596(OL) + .778(TE) + .997(WR) - .571(TE)(WR)  
+QB_cl2 = 2.1(TE) + 1.08(WR) - 1.292(TE)(WR)  
+QB_cl3 = 2.66(TE) + 1.41(WR) - 2.28(TE)(WR)  
+QB_cl4 = 1.84(TE) + 1.17(WR) - 1.41(TE)(WR)  
+QB_cl5 = 1.83(TE) + .679(WR) - 1.362(TE)(WR)  
+
+It is interesting to note that the top performing QB model (cluster 1), includes all positions as coefficients whereas the other models only use TE and WR.
+
+####Placing Teams in models  
+
+Now I have to deal with the question as to how to place a team in a cluster model? My method was to use the positional averages for each cluster in comparison to a teams positional PER to place a team in a representative model. I generated deviations for each model. 
+
+Let's take a look at Arizona Cardinal's 2014 PER data to predict their QB performance in 2015. In 2014, the team's positional PER were: QB: 1.61, TE: .58, WR: 1.137, OL: 1.434
+
+```{r echo=FALSE, results ="hide"}
+ndf<-subset(dat1, dat1$Year==2014,select=c(QB, OL, TE,WR),)
+str(ndf)
+head(ndf)
+tail(ndf)
+ndf$c1_dev<-2.289 - ndf$QB + 1.158 -ndf$TE + 1.355 - ndf$WR + 1.554 - ndf$OL 
+ndf$c2_dev<- 1.81 - ndf$QB + 1.0 -ndf$TE + 1.48 - ndf$WR + 1.39 - ndf$OL 
+ndf$c3_dev<- 1.71 - ndf$QB + .72 -ndf$TE + 1.18 - ndf$WR + 1.33 - ndf$OL
+ndf$c4_dev<- 1.44 - ndf$QB + 1.08 -ndf$TE + 1.07 - ndf$WR + 1.38 - ndf$OL
+ndf$c5_dev<- 1.81 - ndf$QB + 1.0 -ndf$TE + 1.0 - ndf$WR + 1.27 - ndf$OL
+```
+Calculating the deviations for each cluster using the 2014 PER, I determine that cluster 3 has the smallest deviation of .179. Using the cluster 3 model on Arizona's 2014 PER:
+
+QB_cl3 = 2.66*(TE) + 1.41*(WR) - 2.28*(TE)*(WR) 
+QB_cl3 = 2.66*(.58) + 1.41*(1.137) - 2.28*(.58)*(1.137) = 1.642
+
+
+I get a QB PER of 1.642 for cluster 3. Now, I need to adjust this prediction using Arizona's 2014 QB deviation. Actual 2014 QB PER = 1.61;  Arizona's QB cluster deviation = actual Arizona QB 2014 PER - cluster 3 QB PER = 1.61 - 1.710 = -.1. Final QB estimate for Arizona's 2015 QB: 1.642 + (-.1) = 1.542. This assumes that the QB for 2015 is the same as 2014. If this quarterback is a franchise QB, using his average PER (over many years) may be even more accurate instead of using his most recent year's performance. 
+
+**Prediction for Arizona 2015 QB without intelligence: 1.542**
+
+This prediction could be adjusted further by using intelligence gathered pre-season for Arizona's 2015 team. Anticipated PER for each position: OL, TE, WR, QB would be used.
+
+####Does the prediction make sense?
+
+This value may seem low considering that in 2014 actual QB PER was 1.61. Why? 
+
+        
+2013    QB: 1.68    TE: .69     WR: 1.405   OL: 1.365  
+2014    QB: 1.61    TE: .58     WR: 1.137   OL: 1.43
+
+Looking at the data, I see that 2014 WR and TE PER dropped dramatically from 2013 which would cause a lower prediction for 2015. 
+
+
+##Summary
+
+In review, the prediction process is:
+
+* find cluster deviations for a team's PER performance for the year prior to the prediction year.    
+
+* choose the cluster model whose deviation is closest to zero.  
+
+* input latest assessment of positional PER into the regression model to determine cluster QB PER.  
+
+* calculate the QB's deviation from cluster QB center using the specific QB's average PER or most recent PER or a new QB's predicted PER.  
+
+* add QB's deviation to model's predicted value.  
+
+The techniques discussed in this paper were developed to provide the best possible prediction for QB performance. It is important to realize these predictions are best made when the most up-to-date data is used. It is essential to gather intelligence to make improvements when using the last year's performances since new personal have been incorporated into the team.   
+
+Additionally, the model is an attempt to factor in the interactions of different positions on the QB play. Placing the current team accurately in the cluster becomes an essential part of identifying the best model. This method may be refined from the above method. For example, weighting may be placed on the values when determining cluster deviations. This would be used to emphasize the variables with most impact gathered from the previous regression model coefficients.
+
