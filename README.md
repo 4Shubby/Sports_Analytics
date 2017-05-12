@@ -1,6 +1,6 @@
 # Sports_analytics
 
-included in this repository will be code I used for Tampa Bay Buccaneers using their proprietary performance ratings.
+Code I used for Tampa Bay Buccaneers using their proprietary performance ratings (PER).
 
 Finished documents can be viewed on my Research Gate site.
 
