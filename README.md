@@ -1,6 +1,6 @@
 # Sports_analytics
 
-Code I used for Tampa Bay Buccaneers using their proprietary performance ratings (PER).
+Code for Tampa Bay Bucs using proprietary performance ratings (PER).
 
 Finished documents can be viewed on my Research Gate site.
 
